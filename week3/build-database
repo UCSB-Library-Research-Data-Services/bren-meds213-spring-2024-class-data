@@ -1,0 +1,3 @@
+#!/bin/bash
+rm -f database.db
+duckdb database.db < schema-build-script.sql

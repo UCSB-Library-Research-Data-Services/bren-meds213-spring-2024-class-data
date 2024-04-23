@@ -81,7 +81,7 @@ CREATE TABLE Snow_cover (
     Date DATE NOT NULL,
     Plot VARCHAR, -- some Null in the data :/
     Location VARCHAR NOT NULL,
-    Snow_cover INTEGER NOT NULL CHECK (Snow_cover > -1 AND Snow_cover < 101),
+    Snow_cover INTEGER CHECK (Snow_cover > -1 AND Snow_cover < 101),
     Observer VARCHAR
 );
-COPY Snow_cover FROM 'snow_cover_fixed_JB.csv' (header TRUE);
+COPY Snow_cover FROM 'snow_cover_fixedman_JB.csv' (header TRUE); -- csv manually altered

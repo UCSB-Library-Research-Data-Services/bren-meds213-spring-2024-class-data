@@ -1,3 +1,6 @@
+---
+title: "Data Anonymization with R's sdcMicro Package"
+author: "UCSB Library, Research Data Services"
 date: "2024-05-20"
 output:
   html_document: default

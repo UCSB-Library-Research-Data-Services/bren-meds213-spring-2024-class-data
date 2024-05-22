@@ -1,0 +1,261 @@
+---
+title: "Data Anonymization with R's sdcMicro Package"
+author: "UCSB Library, Research Data Services"
+date: "2024-05-20"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Case: South Park Elementary School Data
+
+Mayor McDaniels and Peter Charles (aka PC Principal) are concerned that even after removing direct identifiers such as names, SSNs, and IDs, students may still be easily re-identified in the yearly assessment dataset and have their math and reading scores revealed. For example, everyone in school knows that Tolkien Williams is the wealthiest kid in the whole town, whereas Kenny and his sister Karen are from a deprived household.
+
+They want to openly share this dataset with other school board members. However, they have requested our assistance in computing the risk of disclosure, implementing strategies to minimize the potential re-identification of the students, and determining information loss for the anonymized dataset. They asked for our help, and we will use the sdcMicro package for this purpose.
+
+In summary, our client has three main questions for us (and none of them involve finding out who keeps killing Kenny and how he keeps coming back to life):
+
+Q1. What is the level of disclosure risk associated with this dataset?
+
+Q2. How can the risk of re-identification be significantly reduced?
+
+Q3. What would be the utility and information loss after implementing the anonymization strategies?
+
+*\*Caveat: We have a relatively small toy dataset for this exercise, so we can't strive for some of the more conservative thresholds recommended in the literature.*
+
+## Understanding the Data
+
+### Getting Package & Data
+
+```{r}
+library(sdcMicro)
+
+data <- read.csv("southpark-sdc.csv")
+```
+
+### Review Data Structure
+
+```{r}
+#Read the CSV dataset into a data frame
+df <- read.csv("southpark-sdc.csv")
+
+#Show the list of variable names
+head(df)
+
+#Summary of the data frame
+str(df)
+```
+
+***Discussion: What variables can be considered direct identifiers? What variables are quasi or indirect identifiers?***
+
+## Data Prep - Converting variables
+
+As we can see, we will need to convert some of the variables first.
+
+The variables *stu-id*, *SSN*, *name*, and *dob* will soon be removed from the dataset as they are direct identifiers. Let's focus on the remaining ones that need to be converted before we can proceed.
+
+```{r}
+fname = "southpark-sdc.csv"
+file <- read.csv(fname)
+file <- varToFactor(obj=file, var=c("zip","age", "sex","race","ethn", "snap", "income", "learn_dis","phys_dis"))
+
+#Convert to numeric math_sc and read_sc
+?
+
+```
+
+## Answering Questions
+
+### Q1. What is the level of disclosure risk associated with this dataset?
+
+To answer this question, we must first set up an ***SDC problem***. In other words, we must select variables and create an object of class *sdcMicroObj* for the SDC process in *R.*
+
+#### **Create an SDC Problem**
+
+```{r}
+#Select variables for creating the sdcMicro object
+#Select categorical key variables - aka quasi-identifiers
+
+sdcInitial <- createSdcObj(dat=file,
+                       keyVars=c(?),
+                       numVars=c(?),
+                       weightVar=NULL,
+                       hhId=NULL,
+                       strataVar=NULL,
+                       pramVars=NULL,
+                       excludeVars=c(?),
+                       seed=0,
+                       randomizeRecords=FALSE,
+                       alpha=c(1))
+# Summary of object
+?
+```
+
+**Discussion: What about the stu_id? Why are we keeping it?**
+
+Check the results below and the number of observations that violate 2-5 anonymity. What does that mean?
+
+#### Time to calculate the risk of re-identification for the entire dataset
+
+```{r}
+#The threshold depends on the size of the dataset and the access control (a conservative number for large surveys is 0.04)
+?
+```
+
+Ouch! What does that score mean?
+
+Well, our clients won't be pleased with that score. Let's see if we can lower it to less than 15% and a k=5.
+
+We have to do some work to reduce that, but that would be the first answer for our clients.
+
+We can further inspect this issue before moving to the second question.
+
+#### Which observations/subjects have a higher risk of being re-identified?
+
+```{r}
+?
+
+```
+
+### Q2. How can the risk of re-identification be significantly reduced?
+
+We learned that there are different techniques to de-identify and anonymize datasets.
+
+First, let's use some non-perturbative methods such as global recoding and top and bottom coding techniques.
+
+#### Recoding Techniques
+
+***Income***
+
+As mentioned before, the household income of some students may pose a risk to their privacy in this dataset. Let's see if using top and bottom coding could help reduce that risk.
+
+```{r}
+#Frequencies of income before recoding
+table(sdcInitial@manipKeyVars$income)
+```
+
+```{r}
+#Recode variable income (top coding)
+sdcInitial <- groupAndRename(obj= sdcInitial, var= c("income"), before=c("200,000-249,999","500,000+"), after=c("200,000+"))
+
+#Recode variable income (bottom coding)
+sdcInitial <- groupAndRename(obj= sdcInitial, var= c("income"), before=c("10,000-24,999","75,000-99,999"), after=c("10,000-99,999"))
+```
+
+***Age***
+
+```{r}
+#Frequencies of age before recording
+
+```
+
+```{r}
+#Recode Age 
+#Top
+sdcInitial <- groupAndRename(obj= sdcInitial, var= c("age"), before=c(?), after=c(?))  
+#Bottom
+sdcInitial <- groupAndRename(obj= sdcInitial, var= c("age"), before=c("?"), after=c("?"))
+```
+
+#### Important Note: Undoing things
+
+```{r}
+#Important note: If the results are reassigned to the same sdcMicro object, undoing the last step is possible with `sdcInitial <- undolast(sdcInitial)`
+#A caveat is that the results of the last step will be lost. 
+#We can also choose to assign results to a new sdcMicro object this time, using:
+#Use `sdc1 <- functionName(sdcInitial)` if you anticipate creating multiple sdc problems to test out. Otherwise, you can delete the object and re-run the code when needed.
+```
+
+Let's see if those steps lowered the risk of re-identification of subjects.
+
+```{r}
+#Check global re-id risk
+sdcInitial@risk$global$risk
+
+#Additionally, we may print a K-anonymity violation comparison
+print(sdcInitial, 'kAnon')
+
+```
+
+Not a great improvement. And this took quite some extra steps, because we had to inspect and test out things. So let's try something else.
+
+#### K-Anonymity Suppression
+
+Time for a more powerful technique. Let's use the k-anonymization function!
+
+```{r}
+#Local suppression to obtain k-anonymity
+?
+  
+#Setting the parameters that we aim for at least 5 observations sharing the same attributes in the dataset.
+#Alternatively, we could have set the order of importance for each keyvariables
+#sdcInitial <- kAnon(sdcInitial, importance=c(9,5,6,7,8,4,3,1,2), k=c(5))
+```
+
+More on importance (pg. 50): <https://cran.r-project.org/web/packages/sdcMicro/sdcMicro.pdf>
+
+Time to check it again:
+
+```{r}
+
+#Global risk
+
+
+#K-anon
+
+
+
+```
+
+Alright! We managed to lower the risk of identification from 81% to about 10%, and now we have 0 observations violating 5-anonymity! We can tell our clients we used some recoding, but suppression via k-anonymity was necessary to improve the privacy level of this dataset.
+
+### Q3. What would be the utility and information loss after implementing anonymization strategies?
+
+Time to measure the utility and information loss for the anonymized dataset.
+
+```{r}
+#First, we retrieve the total number of suppressions for each categorical key variable
+print(sdcInitial, 'ls')
+```
+
+```{r}
+#We can also compare the number of NAs before and after our interventions
+#Store the names of all categorical key variables in a vector
+namesKeyVars <- names(sdcInitial@manipKeyVars)
+
+#Matrix to store the number of missing values (NA) before and after anonymization
+NAcount <- matrix(NA, nrow = 2, ncol = length(namesKeyVars))
+colnames(NAcount) <- c(paste0('NA', namesKeyVars)) #column names
+rownames(NAcount) <- c('initial', 'treated') #row names
+
+#NA count in all key variables (NOTE: only those coded NA are counted)
+for(i in 1:length(namesKeyVars)) {
+  NAcount[1, i] <- sum(is.na(sdcInitial@origData[,namesKeyVars[i]]))
+  NAcount[2, i] <- sum(is.na(sdcInitial@manipKeyVars[,i]))}
+
+#Show results
+NAcount
+```
+
+Based on the results, we can tell PC Principal and Mayor McDaniels that the suppression greatly reduced student income and race details, causing significant information loss. We could continue exploring additional functions in this package or even consider different ways of recording those variables. However, they only paid us for a quick one-hour consultation to test the waters. So, let's call it a day for now and export the anonymized dataset we have produced.
+
+### Preparing data for sharing
+
+#### **Creating a new random number to replace the student ID**
+
+```{r}
+#Adding a new randomized ID-variable
+sdcInitial <- createNewID(sdcInitial, newID="?", withinVar="?")
+```
+
+#### **Exporting the anonymized dataset**
+
+```{r}
+writeSafeFile(obj=sdcInitial, format="csv", randomizeRecords="no", col.names=TRUE, sep=",", dec=".", fileOut="southpark-anon.csv")
+
+#Please be aware that there is currently a glitch causing the column names in the output file to be offset by one. Also, remember that we intentionally kept the student IDs? This allows us to link responses for research purposes as long as the data is safeguarded. However, before publicly sharing the dataset, we'd have to ensure that you remove this direct identifier to protect the students' privacy.
+```

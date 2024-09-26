@@ -1,0 +1,91 @@
+#DUCKDB through R
+
+##Load in libraries 
+```{r, warning = F}
+#Lets load all the libraries 
+library(tidyverse)
+library(DBI)
+library(dbplyr)
+library(duckdb)
+```
+
+
+##Connect to database
+
+```{r}
+conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = "../week3/database.db")
+```
+
+## Check out 
+```{r}
+DBI::dbListTables(conn)
+```
+
+```{r}
+species <- tbl(conn, "Species")
+species
+```
+
+SQL Query 
+
+```{r}
+df <- dbGetQuery(conn, "SELECT * FROM Species WHERE Code LIKE 'a%'")
+df
+```
+
+##working with 'dbplyr'
+
+This is read-only 
+```{r}
+species %>% 
+  filter(Relevance == "Study species") %>% 
+  select(Code, Scientific_name) %>% 
+  show_query()
+
+```
+
+```{r}
+species %>% 
+  filter(Relevance == "Study species") %>% 
+  select(Code, Scientific_name) %>% 
+  collect()
+
+```
+Group By relevance and count the number of species in a group ->
+
+```{r}
+species %>% 
+  group_by(Relevance) %>% 
+  summarize(num_species = n()) %>% 
+  arrange(-num_species) %>% 
+  collect()
+```
+We can even mutate!
+
+We want to add an "X" in front of the Codes and update the column using a mutate:
+
+```{r}
+new_species_code <- species %>% 
+  mutate(Code = paste0("X", Code)) %>% 
+  collect()
+
+```
+
+We can do join through it as well! 
+
+```{r}
+eggs_db <- tbl(conn, "Bird_eggs") #qoute bc you need the dbi package 
+nests_db <- tbl(conn, "Bird_nests")
+```
+
+We want to use left join the next and the egg tables: 
+
+```{r}
+left_join(eggs_db, nests_db, by = c("Nest_ID", "Year", "Site", "Book_page")) %>% 
+  show_query()
+```
+
+```{r}
+DBI::dbDisconnect(conn, shutdown = TRUE)
+```
+
